@@ -8,14 +8,16 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <iconv.h>
 
 const char aug_plugin_name[] = "aug-record";
 
-void input_char(int *, aug_action *, void *);
+void input_char(uint32_t *, aug_action *, void *);
 
 const struct aug_api *g_api;
 struct aug_plugin *g_plugin;
 FILE *g_fp;
+iconv_t g_cd;
 const int g_dir_mode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP;
 const int g_file_mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
 
@@ -29,11 +31,25 @@ struct aug_plugin_cb g_callbacks = {
 #define LOG(...) \
 	(*g_api->log)(g_plugin, __VA_ARGS__)
 
-void input_char(int *ch, aug_action *action, void *user) {
+void input_char(uint32_t *ch, aug_action *action, void *user) {
+	size_t inbytesleft, outbytesleft;
+	char buf[16];
+	char *in_p, *out_p;
+	uint32_t input;
 	(void)(action);
 	(void)(user);
 	
-	if(fwrite( (char *) ch, sizeof(char), 1, g_fp) != 1)
+	input = *ch;
+	in_p = (char *) &input;
+	out_p = buf;
+	inbytesleft = sizeof(input);
+	outbytesleft = sizeof(buf);
+	if(iconv(g_cd, &in_p, &inbytesleft, &out_p, &outbytesleft) == ((size_t) -1)) {
+		LOG("warning, failed to convert 0x%08x to utf-8: %s\n", *ch, strerror(errno));
+		return;
+	}
+
+	if(fwrite(buf, sizeof(char), sizeof(buf) - outbytesleft, g_fp) != 1)
 		LOG("warning, failed to write character\n");
 }
 
@@ -124,12 +140,15 @@ int aug_plugin_init(struct aug_plugin *plugin, const struct aug_api *api) {
 	}
 	wordfree(&exp);
 
+	if( (g_cd = iconv_open("UTF8", "WCHAR_T")) == ((iconv_t) -1) )
+		return -1;
+
 	if( (g_fp = fdopen(fd, "w") ) == NULL) {
 		LOG("failed to open file descriptor as FILE pointer: %s\n", strerror(errno));
 		close(fd);
 		return -1;
 	}
-
+		
 	return 0;
 }
 
@@ -137,5 +156,8 @@ void aug_plugin_free() {
 	if(fclose(g_fp) != 0) {
 		LOG("warning, failed to close file pointer: %s\n", strerror(errno));
 	}
+
+	if(iconv_close(g_cd) != 0)
+		LOG("warning, failed to close iconv descriptor\n");
 }
 
