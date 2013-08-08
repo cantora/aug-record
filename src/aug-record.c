@@ -21,12 +21,7 @@ iconv_t g_cd;
 const int g_dir_mode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP;
 const int g_file_mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
 
-struct aug_plugin_cb g_callbacks = {
-	.input_char = input_char,
-	.cell_update = NULL,
-	.cursor_move = NULL,
-	.screen_dims_change = NULL
-};
+struct aug_plugin_cb g_callbacks;
 
 #define LOG(...) \
 	(*g_api->log)(g_plugin, __VA_ARGS__)
@@ -91,7 +86,9 @@ int aug_plugin_init(struct aug_plugin *plugin, const struct aug_api *api) {
 
 	LOG("init\n");
 
-	g_callbacks.user = NULL;
+	aug_callbacks_init(&g_callbacks);
+	g_callbacks.input_char = input_char;
+
 	(*g_api->callbacks)(g_plugin, &g_callbacks, NULL);
 
 	if( (*g_api->conf_val)(g_plugin, aug_plugin_name, "prefix", &prefix) != 0) {
